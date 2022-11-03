@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "poetry-plugins"
+version = "0.0.0"
+description = ""
+authors = []
+packages = [
+    { include = "poetry_plugins" }
+]
+
+[tool.poetry.dependencies]
+python = "^3.7"
+poetry = "*"
+cleo = "*"
+python-project-tools = {git = "https://github.com/stefanhoelzl/python-project-tools.git"}
+
+[tool.poetry.plugins."poetry.plugin"]
+version = "poetry_plugins.version:VersionPlugin"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
