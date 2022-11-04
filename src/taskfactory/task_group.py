@@ -14,6 +14,8 @@ from typing import (
 
 import typer
 
+from taskfactory.console import stdout
+
 TaskFunctionType = TypeVar("TaskFunctionType", bound=Callable[..., Any])
 
 
@@ -61,7 +63,7 @@ class TaskGroup:
     ) -> Callable[[TaskFunctionType], TaskFunctionType]:
         def decorator(fn: TaskFunctionType) -> TaskFunctionType:
             fn = self._with_pre_and_post_tasks(fn)
-            self._app.command()(fn)
+            self._app.command()(self._with_return_value_as_output(fn))
             return fn
 
         return self._decorator_factory(cached, decorator)
@@ -102,3 +104,15 @@ class TaskGroup:
                 return fn(*args, **kwargs)
 
         return with_pre_and_post_tasks  # type: ignore
+
+    def _with_return_value_as_output(
+        self, fn: Callable[[TaskFunctionType], TaskFunctionType]
+    ) -> TaskFunctionType:
+        @functools.wraps(fn)
+        def with_return_value_as_output(*args: Any, **kwargs: Any) -> Any:
+            result = fn(*args, **kwargs)
+            if result is not None:
+                stdout.print(result)
+            return result
+
+        return with_return_value_as_output  # type: ignore

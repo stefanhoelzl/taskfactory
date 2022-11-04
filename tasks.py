@@ -19,7 +19,7 @@ def lint(check: bool = False) -> None:
 
 @main.task()
 def tests() -> None:
-    shell.run("pytest -vv")
+    shell.run("pytest -vv --failed-first --new-first")
 
 
 @main.task()
