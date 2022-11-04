@@ -62,3 +62,41 @@ def test_cached_tasks_only_runs_once() -> None:
         cached()
 
     assert run(group, ["main"]) == Result(exit_code=0, stdout="cached\n")
+
+
+def test_pre_post_tasks_from_group() -> None:
+    group = TaskGroup()
+
+    @group.pre()
+    def pre() -> None:
+        print("pre")
+
+    @group.post()
+    def post() -> None:
+        print("post")
+
+    @group.task()
+    def task() -> None:
+        print("task")
+
+    assert run(group, ["task"]) == Result(exit_code=0, stdout="pre\ntask\npost\n")
+
+
+def test_pre_post_tasks_from_parent_group() -> None:
+    parent = TaskGroup()
+    sub = TaskGroup()
+    parent.add_group("sub", sub)
+
+    @sub.task()
+    def task() -> None:
+        print("task")
+
+    @parent.pre()
+    def pre() -> None:
+        print("pre")
+
+    @parent.post()
+    def post() -> None:
+        print("post")
+
+    assert run(sub, ["task"]) == Result(exit_code=0, stdout="pre\ntask\npost\n")
