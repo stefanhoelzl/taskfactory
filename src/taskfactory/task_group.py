@@ -1,15 +1,20 @@
 import contextlib
 import functools
+import sys
+from types import TracebackType
 from typing import (
     Any,
     Callable,
     ContextManager,
+    Dict,
     Iterator,
     List,
     MutableSet,
     NoReturn,
     Optional,
+    Type,
     TypeVar,
+    cast,
 )
 
 import typer
@@ -17,6 +22,7 @@ import typer
 from taskfactory.console import stdout
 
 TaskFunctionType = TypeVar("TaskFunctionType", bound=Callable[..., Any])
+ExceptionType = TypeVar("ExceptionType", bound=Exception)
 
 
 class TaskGroup:
@@ -26,19 +32,22 @@ class TaskGroup:
         self._app = typer.Typer(callback=lambda: None)
         self._pre_tasks: List[Callable[[], Any]] = []
         self._post_tasks: List[Callable[[], Any]] = []
-        self._pre_post_task_handler: MutableSet[
-            Callable[[], ContextManager[None]]
-        ] = set()
+        self._exception_handlers: Dict[
+            Type[Exception], Callable[[Exception, TracebackType], int]
+        ] = {}
         self.parents: MutableSet[TaskGroup] = set()
 
-    def register_pre_post_task_handler(
-        self, handler: Callable[[], ContextManager[None]]
-    ) -> None:
-        self._pre_post_task_handler.add(handler)
+    def exception_handler(
+        self, exception_type: Type[ExceptionType]
+    ) -> Callable[[Callable[[ExceptionType, TracebackType], int]], None]:
+        def decorator(fn: Callable[[ExceptionType, TracebackType], int]) -> None:
+            self._exception_handlers[exception_type] = fn  # type: ignore
+
+        return decorator
 
     def add_group(self, name: str, group: "TaskGroup") -> None:
         self._app.add_typer(group._app, name=name)
-        group.register_pre_post_task_handler(self.pre_post_task_handler)
+        group.parents.add(self)
 
     def pre(
         self, cached: bool = False
@@ -63,7 +72,9 @@ class TaskGroup:
     ) -> Callable[[TaskFunctionType], TaskFunctionType]:
         def decorator(fn: TaskFunctionType) -> TaskFunctionType:
             fn = self._with_pre_and_post_tasks(fn)
-            self._app.command()(self._with_return_value_as_output(fn))
+            self._app.command()(
+                self._with_return_value_as_output(self._with_exception_handler(fn))
+            )
             return fn
 
         return self._decorator_factory(cached, decorator)
@@ -71,14 +82,34 @@ class TaskGroup:
     @contextlib.contextmanager
     def pre_post_task_handler(self) -> Iterator[None]:
         stack = contextlib.ExitStack()
-        for handler in self._pre_post_task_handler:
-            stack.enter_context(handler())
+        for parent in self.parents:
+            stack.enter_context(parent.pre_post_task_handler())
         with stack:
             for task in self._pre_tasks:
                 task()
             yield
             for task in self._post_tasks:
                 task()
+
+    def handle_exception(self, exception: Exception) -> NoReturn:
+        handler = next(
+            (
+                h
+                for t, h in self._exception_handlers.items()
+                if isinstance(exception, t)
+            ),
+            None,
+        )
+        if handler is None:
+            for parent in self.parents:
+                parent.handle_exception(exception)
+            raise
+
+        _, _, tb = sys.exc_info()
+        assert tb is not None
+
+        exit_code = handler(exception, tb)
+        sys.exit(exit_code)
 
     def __call__(self, args: Optional[List[str]] = None) -> NoReturn:  # type: ignore
         self._app(args)
@@ -116,3 +147,15 @@ class TaskGroup:
             return result
 
         return with_return_value_as_output  # type: ignore
+
+    def _with_exception_handler(
+        self, fn: Callable[[TaskFunctionType], TaskFunctionType]
+    ) -> TaskFunctionType:
+        @functools.wraps(fn)
+        def with_exception_handler(*args: Any, **kwargs: Any) -> Any:
+            try:
+                return fn(*args, **kwargs)
+            except Exception as exc:
+                self.handle_exception(exc)
+
+        return with_exception_handler  # type: ignore

@@ -1,6 +1,7 @@
-import io
-from contextlib import redirect_stderr, redirect_stdout
-from typing import List, NamedTuple
+from types import TracebackType
+from typing import List, NamedTuple, NoReturn
+
+import pytest
 
 from taskfactory import TaskGroup, stderr, stdout
 
@@ -111,3 +112,32 @@ def test_print_return_value() -> None:
         return sub()
 
     assert run(group, ["task"]) == Result(exit_code=0, stdout="task\n")
+
+
+def test_exception_handler() -> None:
+    class Base(Exception):
+        pass
+
+    class Sub(Base):
+        pass
+
+    parent = TaskGroup()
+    sub = TaskGroup()
+    parent.add_group("sub", sub)
+
+    @parent.exception_handler(Base)
+    def handle_runtime_error(exception: Base, traceback: TracebackType) -> int:
+        stderr.print("handled")
+        return 99
+
+    @sub.task()
+    def handled() -> NoReturn:
+        raise Sub()
+
+    @sub.task()
+    def unhandled() -> NoReturn:
+        raise RuntimeError()
+
+    assert run(sub, ["handled"]) == Result(exit_code=99, stderr="handled\n")
+    with pytest.raises(RuntimeError):
+        run(sub, ["unhandled"])
