@@ -5,7 +5,6 @@ from types import TracebackType
 from typing import (
     Any,
     Callable,
-    ContextManager,
     Dict,
     Iterator,
     List,
@@ -14,7 +13,7 @@ from typing import (
     Optional,
     Type,
     TypeVar,
-    cast,
+    Union,
 )
 
 import typer
@@ -23,6 +22,7 @@ from taskfactory.console import stdout
 
 TaskFunctionType = TypeVar("TaskFunctionType", bound=Callable[..., Any])
 ExceptionType = TypeVar("ExceptionType", bound=Exception)
+Skip = Union[bool, Callable[[], bool]]
 
 
 class TaskGroup:
@@ -50,25 +50,25 @@ class TaskGroup:
         group.parents.add(self)
 
     def pre(
-        self, cached: bool = False
+        self, cached: bool = False, skip: Skip = False
     ) -> Callable[[TaskFunctionType], TaskFunctionType]:
         def decorator(fn: TaskFunctionType) -> TaskFunctionType:
             self._pre_tasks.append(fn)
             return fn
 
-        return self._decorator_factory(cached, decorator)
+        return self._decorator_factory(cached, skip, decorator)
 
     def post(
-        self, cached: bool = False
+        self, cached: bool = False, skip: Skip = False
     ) -> Callable[[TaskFunctionType], TaskFunctionType]:
         def decorator(fn: TaskFunctionType) -> TaskFunctionType:
             self._post_tasks.append(fn)
             return fn
 
-        return self._decorator_factory(cached, decorator)
+        return self._decorator_factory(cached, skip, decorator)
 
     def task(
-        self, cached: bool = False
+        self, cached: bool = False, skip: Skip = False
     ) -> Callable[[TaskFunctionType], TaskFunctionType]:
         def decorator(fn: TaskFunctionType) -> TaskFunctionType:
             fn = self._with_pre_and_post_tasks(fn)
@@ -77,7 +77,7 @@ class TaskGroup:
             )
             return fn
 
-        return self._decorator_factory(cached, decorator)
+        return self._decorator_factory(cached, skip, decorator)
 
     @contextlib.contextmanager
     def pre_post_task_handler(self) -> Iterator[None]:
@@ -117,14 +117,27 @@ class TaskGroup:
     def _decorator_factory(
         self,
         cached: bool,
+        skip: Skip,
         custom_decorator: Callable[[TaskFunctionType], TaskFunctionType],
     ) -> Callable[[TaskFunctionType], TaskFunctionType]:
         def decorator(fn: TaskFunctionType) -> TaskFunctionType:
+            fn = self._maybe_skipped(fn, skip)
             if cached:
                 fn = functools.lru_cache(maxsize=None, typed=True)(fn)  # type: ignore
             return custom_decorator(fn)
 
         return decorator
+
+    def _maybe_skipped(
+        self, fn: Callable[[TaskFunctionType], TaskFunctionType], skip: Skip
+    ) -> TaskFunctionType:
+        @functools.wraps(fn)
+        def maybe_skipped(*args: Any, **kwargs: Any) -> Any:
+            if (skip if isinstance(skip, bool) else skip()) is not True:
+                return fn(*args, **kwargs)
+            return None
+
+        return maybe_skipped  # type: ignore
 
     def _with_pre_and_post_tasks(
         self, fn: Callable[[TaskFunctionType], TaskFunctionType]

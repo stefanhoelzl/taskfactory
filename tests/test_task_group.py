@@ -134,10 +134,27 @@ def test_exception_handler() -> None:
     def handled() -> NoReturn:
         raise Sub()
 
+    assert run(sub, ["handled"]) == Result(exit_code=99, stderr="handled\n")
+
     @sub.task()
     def unhandled() -> NoReturn:
         raise RuntimeError()
 
-    assert run(sub, ["handled"]) == Result(exit_code=99, stderr="handled\n")
     with pytest.raises(RuntimeError):
         run(sub, ["unhandled"])
+
+
+def test_skipping_tasks() -> None:
+    group = TaskGroup()
+
+    @group.task(skip=True)
+    def boolean() -> None:
+        stdout.print("skipped")
+
+    assert run(group, ["boolean"]) == Result(exit_code=0)
+
+    @group.task(skip=lambda: True)
+    def fn() -> None:
+        stdout.print("skipped")
+
+    assert run(group, ["fn"]) == Result(exit_code=0)
