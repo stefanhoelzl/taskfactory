@@ -1,3 +1,5 @@
+import os
+
 from taskfactory import TaskGroup, shell
 
 main = TaskGroup()
@@ -18,3 +20,9 @@ def lint(check: bool = False) -> None:
 @main.task()
 def tests() -> None:
     shell.run("pytest -vv")
+
+
+@main.task()
+def check() -> None:
+    tests()
+    lint()

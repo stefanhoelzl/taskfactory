@@ -79,7 +79,7 @@ jobs:
           poetry install
       - name: Run Unit Tests
         run: |
-          tasks lint
+          tasks lint --check
   release:
     runs-on: ubuntu-latest
     needs: [build, lint, tests]

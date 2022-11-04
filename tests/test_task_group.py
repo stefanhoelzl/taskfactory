@@ -2,7 +2,7 @@ import io
 from contextlib import redirect_stderr, redirect_stdout
 from typing import List, NamedTuple
 
-from taskfactory import TaskGroup
+from taskfactory import TaskGroup, stdout
 
 
 class Result(NamedTuple):
@@ -47,3 +47,18 @@ def test_sub_groups() -> None:
     assert run(group, ["sub", "task", "string", "--integer=1"]) == Result(
         exit_code=0, stdout="string 1\n"
     )
+
+
+def test_cached_tasks_only_runs_once() -> None:
+    group = TaskGroup()
+
+    @group.task(cached=True)
+    def cached() -> None:
+        print("cached")
+
+    @group.task()
+    def main() -> None:
+        cached()
+        cached()
+
+    assert run(group, ["main"]) == Result(exit_code=0, stdout="cached\n")

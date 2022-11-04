@@ -1,3 +1,4 @@
+import functools
 from typing import Any, Callable, List, NoReturn, Optional, TypeVar
 
 import typer as _typer
@@ -14,9 +15,13 @@ class TaskGroup:
     def add_group(self, name: str, group: "TaskGroup") -> None:
         self._app.add_typer(group._app, name=name)
 
-    def task(self) -> Callable[[TaskFunctionType], TaskFunctionType]:
+    def task(
+        self, cached: bool = False
+    ) -> Callable[[TaskFunctionType], TaskFunctionType]:
         def decorator(fn: TaskFunctionType) -> TaskFunctionType:
             self._app.command()(fn)
+            if cached:
+                return functools.cache(fn)  # type: ignore
             return fn
 
         return decorator
