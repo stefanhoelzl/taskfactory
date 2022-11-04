@@ -29,22 +29,25 @@ def concurrent(cmds: List[str]) -> None:
     with ThreadPoolExecutor() as pool:
         processes = [
             pool.submit(
-                subprocess.run, shlex.split(cmd), capture_output=True
+                subprocess.run,
+                shlex.split(cmd),
+                capture_output=True,
+                universal_newlines=True,
             )  # type:ignore
             for cmd in cmds
         ]
         for future in as_completed(processes):
-            process: subprocess.CompletedProcess[bytes] = future.result()  # type: ignore
+            process: subprocess.CompletedProcess[str] = future.result()
             success = process.returncode == 0
             if not success:
                 failures += 1
 
             stdout.rule(shlex.join(process.args), style="green" if success else "red")
-            stdout.out(process.stdout.decode())
+            stdout.out(process.stdout)
 
             if process.stderr:
                 stdout.rule("stderr", style="gray")
-                stderr.out(process.stderr.decode())
+                stderr.out(process.stderr)
     if failures > 0:
         stderr.print(f"{failures} failed commands", style="red")
         sys.exit(1)
